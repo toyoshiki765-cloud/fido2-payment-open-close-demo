@@ -52,6 +52,16 @@
   }
   .amount-edit input:focus{ outline:none; border-color:var(--blue); }
 
+  .attack-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px dashed #f3d19e; font-size:12.5px; color:#92400e; }
+  .attack-row:last-of-type{ border-bottom:none; }
+  .attack-row input{
+    border:1px solid #f3d19e; border-radius:6px; padding:5px 8px; font-size:12.5px;
+    font-family:inherit; color:#92400e; background:#fff;
+  }
+  .attack-row input[type="text"]{ width:170px; }
+  .attack-row input[type="number"]{ width:110px; text-align:right; }
+  .attack-row input:disabled{ opacity:.6; }
+
   button{
     width:100%; padding:13px; border:none; border-radius:10px;
     font-size:14px; font-weight:600; cursor:pointer; margin-top:10px;
@@ -181,7 +191,15 @@
   <div class="attack-panel hidden" id="attack-panel">
     <span class="attack-tag">DEMO CONTROL</span>
     <h3>🧪 攻撃者シミュレーション</h3>
-    <p>MITB(Man-in-the-Browser)攻撃は、画面表示はそのままに、送信データだけをマルウェアが裏で書き換えます。下のボタンでその挙動を再現できます。</p>
+    <p>MITB(Man-in-the-Browser)攻撃は、画面表示はそのままに、送信データだけをマルウェアが裏で書き換えます。下記の値は攻撃者が書き換える不正な送信先・金額です(自由に変更できます)。</p>
+    <div class="attack-row">
+      <span>不正送金先</span>
+      <input type="text" id="attack-recipient" value="不明な海外口座(XX-88213)">
+    </div>
+    <div class="attack-row">
+      <span>不正送金額</span>
+      <span>¥<input type="number" id="attack-amount" value="350000" min="1" step="1000"></span>
+    </div>
     <button class="danger-outline" id="btn-attack" onclick="triggerAttack()">⚠️ MITB攻撃をシミュレート</button>
   </div>
 
@@ -363,13 +381,20 @@
   function triggerAttack(){
     if(state.attackSimulated) return;
     state.attackSimulated = true;
-    state.txActual.recipient = '不明な海外口座(XX-88213)';
-    state.txActual.amount = 350000;
+
+    const recipient = $('attack-recipient').value.trim() || '不明な海外口座(XX-88213)';
+    let amount = parseInt($('attack-amount').value, 10);
+    if(isNaN(amount) || amount < 1) amount = 350000;
+
+    state.txActual.recipient = recipient;
+    state.txActual.amount = amount;
     logEvent('[MITB] マルウェアがDOM外の送信データを書き換えました', 'err');
     logEvent(`[MITB] 実際の送信先: ${state.txActual.recipient} / 実際の金額: ${fmtYen(state.txActual.amount)}`, 'err');
     logEvent('[MITB] 画面表示(支払先・金額)は改ざんされていません(ユーザーは気づけない)', 'warn');
     $('btn-attack').textContent = '✅ 攻撃を注入済み';
     $('btn-attack').disabled = true;
+    $('attack-recipient').disabled = true;
+    $('attack-amount').disabled = true;
   }
 
   async function confirmPayment(){
@@ -435,6 +460,10 @@
     $('btn-confirm').disabled = false;
     $('btn-attack').disabled = false;
     $('btn-attack').textContent = '⚠️ MITB攻撃をシミュレート';
+    $('attack-recipient').value = '不明な海外口座(XX-88213)';
+    $('attack-recipient').disabled = false;
+    $('attack-amount').value = 350000;
+    $('attack-amount').disabled = false;
     logEvent('デモをリセットしました');
   }
 
