@@ -143,8 +143,9 @@
   <!-- 画面1: ログイン -->
   <div class="card" id="screen-login">
     <h2>ログイン</h2>
-    <p class="desc">顔認証でログインすると決済セッションが OPEN になります。</p>
+    <p class="desc">顔認証でログインすると決済セッションが OPEN になります。対応端末では実際のFIDO2生体認証(Windows Hello顔認証・指紋、Touch ID/Face IDなど)が起動します。非対応端末ではシミュレーションで代替します。</p>
     <button class="primary" onclick="login()">😊 顔認証でログイン</button>
+    <p id="webauthn-status" style="font-size:11px;color:var(--gray);margin:8px 0 0;text-align:center;"></p>
   </div>
 
   <!-- 画面2: 決済 -->
@@ -162,6 +163,7 @@
     <h3>🧪 攻撃者シミュレーション</h3>
     <p>MITB(Man-in-the-Browser)攻撃は、画面表示はそのままに、送信データだけをマルウェアが裏で書き換えます。下のボタンでその挙動を再現できます。</p>
     <button class="danger-outline" id="btn-attack" onclick="triggerAttack()">⚠️ MITB攻撃をシミュレート</button>
+    <button class="ghost" onclick="resetCredential()">🗑️ FIDO2登録をリセット(再登録テスト用)</button>
   </div>
 
   <!-- 画面3: 結果 -->
@@ -217,25 +219,121 @@
     if(state.session === 'BLOCKED'){ b.classList.add('blocked'); b.textContent = '⛔ CLOSE - 決済不可'; }
   }
 
-  function showBiometric(title, cb, delay=1400){
-    $('bio-title').textContent = title;
-    $('overlay').classList.add('show');
-    setTimeout(() => {
-      $('overlay').classList.remove('show');
-      cb();
-    }, delay);
+  function simulateBiometric(title, delay=1400){
+    return new Promise((resolve) => {
+      $('bio-title').textContent = title;
+      $('overlay').classList.add('show');
+      setTimeout(() => {
+        $('overlay').classList.remove('show');
+        resolve();
+      }, delay);
+    });
   }
 
-  function login(){
-    logEvent('顔認証を開始します(ログイン)...');
-    showBiometric('顔をスキャン中...(ログイン)', () => {
-      state.session = 'OPEN';
-      setBadge();
-      logEvent('顔認証 成功 → セッションを OPEN に設定しました', 'ok');
-      $('screen-login').classList.add('hidden');
-      $('screen-payment').classList.remove('hidden');
-      $('attack-panel').classList.remove('hidden');
-    });
+  // ---- FIDO2 / WebAuthn ----
+  const CRED_KEY = 'fido2_demo_credential_id';
+  let webauthnAvailable = false;
+
+  function bufToB64url(buf){
+    const bytes = new Uint8Array(buf);
+    let str = '';
+    for(const b of bytes) str += String.fromCharCode(b);
+    return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function b64urlToBuf(b64url){
+    const b64 = b64url.replace(/-/g,'+').replace(/_/g,'/') + '='.repeat((4 - b64url.length % 4) % 4);
+    const str = atob(b64);
+    const bytes = new Uint8Array(str.length);
+    for(let i=0;i<str.length;i++) bytes[i] = str.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  async function checkWebAuthn(){
+    try{
+      if(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable){
+        webauthnAvailable = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      }
+    }catch(e){ webauthnAvailable = false; }
+    const statusEl = $('webauthn-status');
+    if(webauthnAvailable){
+      statusEl.textContent = '✅ この端末はFIDO2生体認証に対応しています';
+      logEvent('✅ この端末はFIDO2生体認証(Windows Hello / Touch ID など)に対応しています', 'ok');
+    } else {
+      statusEl.textContent = 'ℹ️ この端末はFIDO2非対応のためシミュレーションで代替します';
+      logEvent('ℹ️ この端末はFIDO2生体認証に非対応のため、認証はシミュレーションで代替します', 'warn');
+    }
+  }
+
+  async function registerCredential(){
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const publicKey = {
+      challenge,
+      rp: { name: '仮想決済サービス デモ' },
+      user: { id: userId, name: 'demo-user@example.com', displayName: 'デモユーザー' },
+      pubKeyCredParams: [{ type:'public-key', alg:-7 }, { type:'public-key', alg:-257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' },
+      timeout: 60000,
+      attestation: 'none'
+    };
+    const cred = await navigator.credentials.create({ publicKey });
+    localStorage.setItem(CRED_KEY, bufToB64url(cred.rawId));
+    return cred;
+  }
+
+  async function getAssertion(){
+    const credIdB64 = localStorage.getItem(CRED_KEY);
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const publicKey = {
+      challenge,
+      allowCredentials: credIdB64 ? [{ id: b64urlToBuf(credIdB64), type: 'public-key' }] : [],
+      userVerification: 'required',
+      timeout: 60000
+    };
+    return navigator.credentials.get({ publicKey });
+  }
+
+  async function doFido2(purpose){
+    const simTitle = purpose === 'login'
+      ? '顔をスキャン中...(ログイン・シミュレーション)'
+      : '顔をスキャン中...(決済確定・シミュレーション)';
+
+    if(!webauthnAvailable){
+      await simulateBiometric(simTitle);
+      logEvent('🧪 シミュレーション認証 成功', 'ok');
+      return;
+    }
+    try{
+      if(!localStorage.getItem(CRED_KEY)){
+        logEvent('FIDO2認証器を初回登録します。端末の生体認証プロンプトに従ってください…');
+        await registerCredential();
+        logEvent('✅ FIDO2認証器の登録に成功しました', 'ok');
+      } else {
+        logEvent('端末の生体認証プロンプトを表示します…');
+        await getAssertion();
+        logEvent('✅ FIDO2生体認証 成功', 'ok');
+      }
+    }catch(err){
+      logEvent(`⚠️ FIDO2認証に失敗/キャンセルされました(${err.name}): シミュレーションに切り替えます`, 'warn');
+      await simulateBiometric(simTitle);
+      logEvent('🧪 シミュレーション認証 成功', 'ok');
+    }
+  }
+
+  function resetCredential(){
+    localStorage.removeItem(CRED_KEY);
+    logEvent('🗑️ 登録済みのFIDO2認証器情報を削除しました(次回ログイン時に再登録されます)');
+  }
+
+  async function login(){
+    logEvent('ログイン処理を開始します...');
+    await doFido2('login');
+    state.session = 'OPEN';
+    setBadge();
+    logEvent('セッションを OPEN に設定しました', 'ok');
+    $('screen-login').classList.add('hidden');
+    $('screen-payment').classList.remove('hidden');
+    $('attack-panel').classList.remove('hidden');
   }
 
   function triggerAttack(){
@@ -250,13 +348,12 @@
     $('btn-attack').disabled = true;
   }
 
-  function confirmPayment(){
+  async function confirmPayment(){
     $('btn-confirm').disabled = true;
-    logEvent('顔認証を開始します(決済確定)...');
-    showBiometric('顔をスキャン中...(決済確定)', () => {
-      logEvent('顔認証 成功 → 表示内容と送信内容の突合を検証します', 'ok');
-      verifyTransaction();
-    });
+    logEvent('決済確定のための再認証を開始します...');
+    await doFido2('confirm');
+    logEvent('表示内容と送信内容の突合を検証します');
+    verifyTransaction();
   }
 
   function verifyTransaction(){
@@ -310,8 +407,11 @@
     logEvent('デモをリセットしました');
   }
 
-  setBadge();
-  logEvent('デモを開始しました。まずは顔認証でログインしてください。');
+  (async function init(){
+    setBadge();
+    await checkWebAuthn();
+    logEvent('デモを開始しました。まずは顔認証でログインしてください。');
+  })();
 </script>
 </body>
 </html>
