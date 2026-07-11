@@ -40,10 +40,17 @@
   .card h2{ font-size:15px; margin:0 0 14px; }
   .card p.desc{ font-size:12.5px; color:var(--gray); line-height:1.6; margin:0 0 16px;}
 
-  .row{ display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .row{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .row:last-child{ border-bottom:none; }
   .row .label{ color:var(--gray); }
   .row .value{ font-weight:600; }
+
+  .amount-edit{ display:flex; align-items:center; gap:2px; font-weight:600; }
+  .amount-edit input{
+    width:110px; text-align:right; border:1px solid var(--border); border-radius:6px;
+    padding:5px 8px; font-size:14px; font-weight:600; font-family:inherit; color:var(--text);
+  }
+  .amount-edit input:focus{ outline:none; border-color:var(--blue); }
 
   button{
     width:100%; padding:13px; border:none; border-radius:10px;
@@ -152,7 +159,10 @@
   <div class="card hidden" id="screen-payment">
     <h2>決済内容の確認</h2>
     <div class="row"><span class="label">支払先</span><span class="value" id="disp-recipient">コーヒーショップ ABC</span></div>
-    <div class="row"><span class="label">金額</span><span class="value" id="disp-amount">¥1,200</span></div>
+    <div class="row">
+      <span class="label">金額</span>
+      <span class="value amount-edit">¥<input type="number" id="input-amount" value="1200" min="1" step="100" oninput="onAmountChange(this)"></span>
+    </div>
     <div class="row"><span class="label">セッション状態</span><span class="value" style="color:var(--green);">OPEN</span></div>
     <button class="primary" id="btn-confirm" onclick="confirmPayment()">🔐 この内容で決済する(生体認証)</button>
   </div>
@@ -336,6 +346,16 @@
     $('attack-panel').classList.remove('hidden');
   }
 
+  function onAmountChange(el){
+    let v = parseInt(el.value, 10);
+    if(isNaN(v) || v < 1) v = 1;
+    state.txDisplayed.amount = v;
+    if(!state.attackSimulated){
+      state.txActual.amount = v;
+    }
+    logEvent(`決済金額を ${fmtYen(v)} に変更しました(表示内容)`);
+  }
+
   function triggerAttack(){
     if(state.attackSimulated) return;
     state.attackSimulated = true;
@@ -394,7 +414,9 @@
   function resetDemo(){
     state.session = 'LOCKED';
     state.attackSimulated = false;
+    state.txDisplayed = { recipient: 'コーヒーショップ ABC', amount: 1200 };
     state.txActual = { ...state.txDisplayed };
+    $('input-amount').value = state.txDisplayed.amount;
     setBadge();
     $('log-lines').innerHTML = '';
     $('screen-result').classList.add('hidden');
