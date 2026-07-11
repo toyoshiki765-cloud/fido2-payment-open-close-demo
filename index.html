@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FIDO2 OPEN/CLOSE 決済デモ</title>
+<style>
+  :root{
+    --blue:#2563eb; --blue-dark:#1d4ed8;
+    --green:#16a34a; --green-bg:#dcfce7;
+    --red:#dc2626; --red-bg:#fee2e2;
+    --gray:#6b7280; --gray-bg:#f3f4f6;
+    --border:#e5e7eb; --text:#1f2937;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:24px 16px 60px;
+    font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+    background:var(--gray-bg); color:var(--text);
+    display:flex; flex-direction:column; align-items:center;
+  }
+  .wrap{ width:100%; max-width:480px; }
+  header{ text-align:center; margin-bottom:16px; }
+  header h1{ font-size:18px; margin:0 0 4px; }
+  header p{ font-size:12px; color:var(--gray); margin:0; }
+
+  .badge{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 14px; border-radius:999px; font-size:13px; font-weight:600;
+    margin:10px 0 18px; transition:all .3s;
+  }
+  .badge.locked{ background:#e5e7eb; color:#4b5563; }
+  .badge.open{ background:var(--green-bg); color:var(--green); }
+  .badge.blocked{ background:var(--red-bg); color:var(--red); }
+
+  .card{
+    background:#fff; border-radius:16px; padding:24px;
+    box-shadow:0 1px 3px rgba(0,0,0,.08); margin-bottom:16px;
+  }
+  .card h2{ font-size:15px; margin:0 0 14px; }
+  .card p.desc{ font-size:12.5px; color:var(--gray); line-height:1.6; margin:0 0 16px;}
+
+  .row{ display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .row:last-child{ border-bottom:none; }
+  .row .label{ color:var(--gray); }
+  .row .value{ font-weight:600; }
+
+  button{
+    width:100%; padding:13px; border:none; border-radius:10px;
+    font-size:14px; font-weight:600; cursor:pointer; margin-top:10px;
+    transition:opacity .15s, transform .1s;
+  }
+  button:active{ transform:scale(.98); }
+  button.primary{ background:var(--blue); color:#fff; }
+  button.primary:hover{ opacity:.9; }
+  button.danger-outline{ background:#fff; color:var(--red); border:1.5px solid var(--red); }
+  button.ghost{ background:#fff; color:var(--gray); border:1.5px solid var(--border); }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .attack-panel{
+    background:#fff7ed; border:1.5px dashed #f59e0b; border-radius:12px;
+    padding:16px; margin-bottom:16px;
+  }
+  .attack-panel h3{ font-size:13px; margin:0 0 8px; color:#92400e; }
+  .attack-panel p{ font-size:12px; color:#92400e; margin:0 0 10px; line-height:1.6;}
+  .attack-tag{ display:inline-block; font-size:10px; background:#f59e0b; color:#fff; padding:2px 8px; border-radius:6px; margin-bottom:8px; }
+
+  .result-box{
+    text-align:center; padding:10px 0 4px;
+  }
+  .result-icon{ font-size:44px; margin-bottom:8px; }
+  .result-box h2{ font-size:17px; margin:0 0 8px; }
+  .result-box p{ font-size:13px; color:var(--gray); line-height:1.7; }
+
+  .diff{
+    background:var(--red-bg); border-radius:10px; padding:12px 14px; margin:14px 0;
+    font-size:12.5px; text-align:left;
+  }
+  .diff div{ display:flex; justify-content:space-between; padding:3px 0; }
+  .diff .k{ color:#7f1d1d; }
+  .diff .before{ color:#166534; font-weight:600; }
+  .diff .after{ color:var(--red); font-weight:600; }
+
+  /* system log */
+  .log{
+    background:#111827; border-radius:12px; padding:14px 16px; max-height:160px;
+    overflow-y:auto; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:#9ca3af;
+  }
+  .log h3{ font-size:11px; color:#6b7280; margin:0 0 8px; text-transform:uppercase; letter-spacing:.05em;}
+  .log .line{ padding:2px 0; white-space:pre-wrap; word-break:break-all; }
+  .log .ok{ color:#34d399; }
+  .log .warn{ color:#fbbf24; }
+  .log .err{ color:#f87171; }
+
+  /* biometric modal */
+  .overlay{
+    position:fixed; inset:0; background:rgba(17,24,39,.75);
+    display:none; align-items:center; justify-content:center; z-index:50;
+  }
+  .overlay.show{ display:flex; }
+  .bio-modal{
+    background:#fff; border-radius:20px; padding:36px 32px; width:280px; text-align:center;
+  }
+  .bio-icon{
+    width:76px; height:76px; border-radius:50%; background:var(--blue);
+    display:flex; align-items:center; justify-content:center; margin:0 auto 16px;
+    font-size:34px; animation:pulse 1.1s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(37,99,235,.5);}
+    70%{ box-shadow:0 0 0 16px rgba(37,99,235,0);}
+    100%{ box-shadow:0 0 0 0 rgba(37,99,235,0);}
+  }
+  .bio-modal h3{ font-size:15px; margin:0 0 6px; }
+  .bio-modal p{ font-size:12px; color:var(--gray); margin:0; }
+
+  .hidden{ display:none !important; }
+  footer{ font-size:11px; color:#9ca3af; margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>仮想決済サービス デモ</h1>
+    <p>FIDO2生体認証による OPEN / CLOSE 決済保護方式</p>
+  </header>
+
+  <div style="text-align:center;">
+    <span id="badge" class="badge locked">🔒 未ログイン</span>
+  </div>
+
+  <!-- 概要カード -->
+  <div class="card">
+    <h2>この方式について</h2>
+    <p class="desc">
+      ① ログイン時の顔認証で決済セッションを <b>OPEN</b>(決済可能状態)にします。<br>
+      ② 決済確定時にもう一度顔認証を行い、画面に表示された取引内容と実際に送信される取引内容が一致するかを検証します。<br>
+      ③ 改ざんが検知された場合はセッションを <b>CLOSE</b> し、「決済不可」として処理を強制的に停止します。
+    </p>
+  </div>
+
+  <!-- 画面1: ログイン -->
+  <div class="card" id="screen-login">
+    <h2>ログイン</h2>
+    <p class="desc">顔認証でログインすると決済セッションが OPEN になります。</p>
+    <button class="primary" onclick="login()">😊 顔認証でログイン</button>
+  </div>
+
+  <!-- 画面2: 決済 -->
+  <div class="card hidden" id="screen-payment">
+    <h2>決済内容の確認</h2>
+    <div class="row"><span class="label">支払先</span><span class="value" id="disp-recipient">コーヒーショップ ABC</span></div>
+    <div class="row"><span class="label">金額</span><span class="value" id="disp-amount">¥1,200</span></div>
+    <div class="row"><span class="label">セッション状態</span><span class="value" style="color:var(--green);">OPEN</span></div>
+    <button class="primary" id="btn-confirm" onclick="confirmPayment()">🔐 この内容で決済する(顔認証)</button>
+  </div>
+
+  <!-- デモ操作パネル(攻撃者視点) -->
+  <div class="attack-panel hidden" id="attack-panel">
+    <span class="attack-tag">DEMO CONTROL</span>
+    <h3>🧪 攻撃者シミュレーション</h3>
+    <p>MITB(Man-in-the-Browser)攻撃は、画面表示はそのままに、送信データだけをマルウェアが裏で書き換えます。下のボタンでその挙動を再現できます。</p>
+    <button class="danger-outline" id="btn-attack" onclick="triggerAttack()">⚠️ MITB攻撃をシミュレート</button>
+  </div>
+
+  <!-- 画面3: 結果 -->
+  <div class="card hidden" id="screen-result">
+    <div class="result-box" id="result-content"></div>
+    <button class="ghost" onclick="resetDemo()">🔄 もう一度デモを実行</button>
+  </div>
+
+  <!-- システムログ -->
+  <div class="log">
+    <h3>system log</h3>
+    <div id="log-lines"></div>
+  </div>
+
+  <footer>※本デモは概念説明用のシミュレーションであり、実際の暗号署名検証は行っていません。</footer>
+</div>
+
+<!-- 生体認証モーダル -->
+<div class="overlay" id="overlay">
+  <div class="bio-modal">
+    <div class="bio-icon">😊</div>
+    <h3 id="bio-title">顔をスキャン中...</h3>
+    <p>動かずそのままお待ちください</p>
+  </div>
+</div>
+
+<script>
+  const state = {
+    session: 'LOCKED', // LOCKED | OPEN | BLOCKED
+    attackSimulated: false,
+    txDisplayed: { recipient: 'コーヒーショップ ABC', amount: 1200 },
+    txActual: { recipient: 'コーヒーショップ ABC', amount: 1200 },
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function fmtYen(n){ return '¥' + n.toLocaleString('ja-JP'); }
+
+  function logEvent(msg, type){
+    const line = document.createElement('div');
+    line.className = 'line' + (type ? ' ' + type : '');
+    const t = new Date().toLocaleTimeString('ja-JP', {hour12:false});
+    line.textContent = `[${t}] ${msg}`;
+    $('log-lines').appendChild(line);
+    $('log-lines').parentElement.scrollTop = $('log-lines').parentElement.scrollHeight;
+  }
+
+  function setBadge(){
+    const b = $('badge');
+    b.className = 'badge';
+    if(state.session === 'LOCKED'){ b.classList.add('locked'); b.textContent = '🔒 未ログイン'; }
+    if(state.session === 'OPEN'){ b.classList.add('open'); b.textContent = '🔓 OPEN - 決済可能'; }
+    if(state.session === 'BLOCKED'){ b.classList.add('blocked'); b.textContent = '⛔ CLOSE - 決済不可'; }
+  }
+
+  function showBiometric(title, cb, delay=1400){
+    $('bio-title').textContent = title;
+    $('overlay').classList.add('show');
+    setTimeout(() => {
+      $('overlay').classList.remove('show');
+      cb();
+    }, delay);
+  }
+
+  function login(){
+    logEvent('顔認証を開始します(ログイン)...');
+    showBiometric('顔をスキャン中...(ログイン)', () => {
+      state.session = 'OPEN';
+      setBadge();
+      logEvent('顔認証 成功 → セッションを OPEN に設定しました', 'ok');
+      $('screen-login').classList.add('hidden');
+      $('screen-payment').classList.remove('hidden');
+      $('attack-panel').classList.remove('hidden');
+    });
+  }
+
+  function triggerAttack(){
+    if(state.attackSimulated) return;
+    state.attackSimulated = true;
+    state.txActual.recipient = '不明な海外口座(XX-88213)';
+    state.txActual.amount = 350000;
+    logEvent('[MITB] マルウェアがDOM外の送信データを書き換えました', 'err');
+    logEvent(`[MITB] 実際の送信先: ${state.txActual.recipient} / 実際の金額: ${fmtYen(state.txActual.amount)}`, 'err');
+    logEvent('[MITB] 画面表示(支払先・金額)は改ざんされていません(ユーザーは気づけない)', 'warn');
+    $('btn-attack').textContent = '✅ 攻撃を注入済み';
+    $('btn-attack').disabled = true;
+  }
+
+  function confirmPayment(){
+    $('btn-confirm').disabled = true;
+    logEvent('顔認証を開始します(決済確定)...');
+    showBiometric('顔をスキャン中...(決済確定)', () => {
+      logEvent('顔認証 成功 → 表示内容と送信内容の突合を検証します', 'ok');
+      verifyTransaction();
+    });
+  }
+
+  function verifyTransaction(){
+    const mismatch = state.txDisplayed.recipient !== state.txActual.recipient
+                   || state.txDisplayed.amount !== state.txActual.amount;
+
+    $('screen-payment').classList.add('hidden');
+    $('attack-panel').classList.add('hidden');
+    $('screen-result').classList.remove('hidden');
+
+    if(mismatch){
+      state.session = 'BLOCKED';
+      setBadge();
+      logEvent('CLOSE判定: 表示内容と送信内容が不一致 → 取引をブロックしました', 'err');
+      $('result-content').innerHTML = `
+        <div class="result-icon">⛔</div>
+        <h2 style="color:var(--red);">決済不可</h2>
+        <p>CLOSE技術により、MITB攻撃による取引改ざんを検知したため決済を停止しました。</p>
+        <div class="diff">
+          <div><span class="k">支払先</span><span></span></div>
+          <div><span class="k">　表示内容</span><span class="before">${state.txDisplayed.recipient}</span></div>
+          <div><span class="k">　実際の送信内容</span><span class="after">${state.txActual.recipient}</span></div>
+          <div><span class="k">金額</span><span></span></div>
+          <div><span class="k">　表示内容</span><span class="before">${fmtYen(state.txDisplayed.amount)}</span></div>
+          <div><span class="k">　実際の送信内容</span><span class="after">${fmtYen(state.txActual.amount)}</span></div>
+        </div>
+      `;
+    } else {
+      logEvent('OPEN判定: 表示内容と送信内容が一致 → 決済を実行しました', 'ok');
+      $('result-content').innerHTML = `
+        <div class="result-icon">✅</div>
+        <h2 style="color:var(--green);">決済完了</h2>
+        <p>${state.txDisplayed.recipient} へ ${fmtYen(state.txDisplayed.amount)} を送金しました。</p>
+      `;
+    }
+  }
+
+  function resetDemo(){
+    state.session = 'LOCKED';
+    state.attackSimulated = false;
+    state.txActual = { ...state.txDisplayed };
+    setBadge();
+    $('log-lines').innerHTML = '';
+    $('screen-result').classList.add('hidden');
+    $('screen-payment').classList.add('hidden');
+    $('attack-panel').classList.add('hidden');
+    $('screen-login').classList.remove('hidden');
+    $('btn-confirm').disabled = false;
+    $('btn-attack').disabled = false;
+    $('btn-attack').textContent = '⚠️ MITB攻撃をシミュレート';
+    logEvent('デモをリセットしました');
+  }
+
+  setBadge();
+  logEvent('デモを開始しました。まずは顔認証でログインしてください。');
+</script>
+</body>
+</html>
