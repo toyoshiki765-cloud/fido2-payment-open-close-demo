@@ -134,8 +134,8 @@
   <div class="card">
     <h2>この方式について</h2>
     <p class="desc">
-      ① ログイン時の顔認証で決済セッションを <b>OPEN</b>(決済可能状態)にします。<br>
-      ② 決済確定時にもう一度顔認証を行い、画面に表示された取引内容と実際に送信される取引内容が一致するかを検証します。<br>
+      ① ログイン時の生体認証(顔・指紋・PINなど)で決済セッションを <b>OPEN</b>(決済可能状態)にします。<br>
+      ② 決済確定時にもう一度生体認証を行い、画面に表示された取引内容と実際に送信される取引内容が一致するかを検証します。<br>
       ③ 改ざんが検知された場合はセッションを <b>CLOSE</b> し、「決済不可」として処理を強制的に停止します。
     </p>
   </div>
@@ -143,8 +143,8 @@
   <!-- 画面1: ログイン -->
   <div class="card" id="screen-login">
     <h2>ログイン</h2>
-    <p class="desc">顔認証でログインすると決済セッションが OPEN になります。対応端末では実際のFIDO2生体認証(Windows Hello顔認証・指紋、Touch ID/Face IDなど)が起動します。非対応端末ではシミュレーションで代替します。</p>
-    <button class="primary" onclick="login()">😊 顔認証でログイン</button>
+    <p class="desc">生体認証でログインすると決済セッションが OPEN になります。対応端末では実際のFIDO2認証(Windows Hello顔認証・指紋・PIN、Touch ID/Face IDなど、端末に登録済みの方式)が起動します。非対応端末ではシミュレーションで代替します。</p>
+    <button class="primary" onclick="login()">🔐 生体認証でログイン</button>
     <p id="webauthn-status" style="font-size:11px;color:var(--gray);margin:8px 0 0;text-align:center;"></p>
   </div>
 
@@ -154,7 +154,7 @@
     <div class="row"><span class="label">支払先</span><span class="value" id="disp-recipient">コーヒーショップ ABC</span></div>
     <div class="row"><span class="label">金額</span><span class="value" id="disp-amount">¥1,200</span></div>
     <div class="row"><span class="label">セッション状態</span><span class="value" style="color:var(--green);">OPEN</span></div>
-    <button class="primary" id="btn-confirm" onclick="confirmPayment()">🔐 この内容で決済する(顔認証)</button>
+    <button class="primary" id="btn-confirm" onclick="confirmPayment()">🔐 この内容で決済する(生体認証)</button>
   </div>
 
   <!-- デモ操作パネル(攻撃者視点) -->
@@ -184,9 +184,9 @@
 <!-- 生体認証モーダル -->
 <div class="overlay" id="overlay">
   <div class="bio-modal">
-    <div class="bio-icon">😊</div>
-    <h3 id="bio-title">顔をスキャン中...</h3>
-    <p>動かずそのままお待ちください</p>
+    <div class="bio-icon">🔐</div>
+    <h3 id="bio-title">認証中...</h3>
+    <p>画面の指示に従ってください</p>
   </div>
 </div>
 
@@ -295,8 +295,8 @@
 
   async function doFido2(purpose){
     const simTitle = purpose === 'login'
-      ? '顔をスキャン中...(ログイン・シミュレーション)'
-      : '顔をスキャン中...(決済確定・シミュレーション)';
+      ? '認証中...(ログイン・シミュレーション)'
+      : '認証中...(決済確定・シミュレーション)';
 
     if(!webauthnAvailable){
       await simulateBiometric(simTitle);
@@ -410,7 +410,7 @@
   (async function init(){
     setBadge();
     await checkWebAuthn();
-    logEvent('デモを開始しました。まずは顔認証でログインしてください。');
+    logEvent('デモを開始しました。まずは生体認証でログインしてください。');
   })();
 </script>
 </body>
